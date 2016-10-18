@@ -1,0 +1,217 @@
+---
+title: "Data Science Midterm"
+output: html_document
+---
+
+```{r Read Data}
+library(tidyverse)
+library(lubridate)
+
+setwd("/Users/nancystetson/Google Drive/Midterm/Midterm Presentation")
+rents <- read_csv("/Users/nancystetson/Google Drive/Midterm/CraigslistData/sfbay.csv")
+
+dim(rents)
+
+```
+
+
+Next filter out listings without latitude and longitude
+``` {r Filter}
+
+rents <- rents %>% filter(!(is.na(latitude))) %>% filter(!(is.na(longitude)))
+dim(rents)
+
+```
+
+Test out Google Directions API
+
+```{r Google Maps API}
+# API Key: AIzaSyAJL4gJxxAsXnHZ4sl5m1oYSv6GpFHCWI4
+
+# Package option 1: Gmapsdistance
+library(gmapsdistance)
+
+# Set the key
+key = "AIzaSyAJL4gJxxAsXnHZ4sl5m1oYSv6GpFHCWI4"
+set.api.key("AIzaSyAJL4gJxxAsXnHZ4sl5m1oYSv6GpFHCWI4")
+
+time <- ymd_hms("2016-11-04 08:00:08 PDT") # In november
+sample_time <- as.numeric(time)
+
+# Test directions output
+x <- gmapsdistance(origin = "37.659645+-122.037708", # Random Location In Hayward Hills
+                   destination = "37.784765+-122.407737",  #Downtown SF
+                   mode = "driving",
+                   traffic_model = "optimistic", # Can also be pessimistic
+                   departure = sample_time) 
+x
+
+# Output is strange. Speculating it is in seconds and meters
+
+x$Time / 60
+# An hour and 3 minutes - google maps has it at hour and 6 right now
+
+(x$Distance / 1000) * 0.621371
+# Google maps has it at 30.6 miles
+
+# Update: Traffic mode is only when dept time is set
+# Also: best to use a range between pes. and opt., best guess is even more opt than opt
+# SOLVED(Note - after some testing, it doesn't appear that when using dept 
+# time it is taking into account traffic.  Duration is 40 min
+# When leaving ten minutes from not
+# But it is more than an hour otherwise )
+
+```
+
+```{r Other Package}
+
+# Try out other API option
+#library(googleway)
+
+
+y <- google_distance(origins = "37.659645+-122.037708", # same locations as in the last example
+               destinations = "37.784765+-122.407737",
+                mode = "driving",
+               units = "imperial",
+               key = key,
+               simplify = T)
+
+# Don't like the format this is in, seems more sophisticated, but annoying to deal with
+# use the other method until it doesn't work
+
+```
+
+
+# Next steps: Try to make the scatterplot of my dreams
+``` {r plot it}
+# First baby step, test this out for multiple distances
+# Nope nevermind first coerce lat and lon into the right format
+
+rents <- rents %>% mutate( location = paste(latitude, "+", longitude, sep = ""))
+# Wasn't actually that hard
+
+# Make a small data set
+trunc_rents <- rents[1:100,]
+
+x <- gmapsdistance(origin = trunc_rents$location, # 100 locations
+                   destination = "37.784765+-122.407737",  #Downtown SF
+                   mode = "driving",
+                   traffic_model = "optimistic", # Can also be pessimistic
+                   departure = sample_time) 
+# took a long time
+
+time_to_sf <- as.data.frame(x$Time)
+time_to_sf$time_to <- time_to_sf$`Time.37.784765+-122.407737`
+time_to_sf <- time_to_sf %>% 
+              select(-`Time.37.784765+-122.407737`)
+
+time_to_sf  <- time_to_sf %>%  mutate(minites = time_to /60) 
+
+trunc_rents <- left_join(time_to_sf, trunc_rents, by = c("or" = "location"))
+
+
+ggplot(trunc_rents, aes(minites, rent_sqft)) + geom_point() +
+  geom_smooth() +
+  xlab("Minutes to Downtown SF") + ylab("Rent Per SqFt" ) + ggtitle("Rent Versus Commute") +
+  theme_minimal()
+
+ggplot(trunc_rents, aes(minites, rent)) + geom_point() +
+  geom_smooth() +
+  xlab("Minutes to Downtown SF") + ylab("Rent" ) + ggtitle("Rent Versus Commute") +
+  theme_minimal()
+
+write_csv(trunc_rents, "ahundredrents_withdist.csv")
+
+# Yay!
+```
+
+
+``` {r Map it}
+
+library(leaflet)
+library(rgeos)
+
+map <-leaflet(data = trunc_rents1) %>% addProviderTiles("Stamen.TonerLite") %>%
+  addCircles(radius = trunc_rents1$rent/10, popup = ~paste(round(minites)))
+map
+
+```
+
+
+Ok next steps. I want to randomly sample 1000 listings (because Google has a limit). 
+But I also want to continue to add to this day after day, so I can make my sample larger.
+To do this, I am going to create an index the length of my data, and then jumble it, then attach
+it to my data frame (rents). Then I can sort by this index and run the firs set today, the second set tomorrow, and so on. 
+
+``` {r Create a Sample}
+################################
+# NOTE - I forgot to set a seed, so don't rerum this. will use written csv #
+# first cleared workspace
+
+#rents <- read_csv("/Users/nancystetson/Google Drive/Midterm/CraigslistData/sfbay.csv")
+#rents <- rents %>% filter(!(is.na(latitude))) %>% filter(!(is.na(longitude)))
+#dim(rents)
+#rents <- rents %>% mutate( location = paste(latitude, "+", longitude, sep = ""))
+
+# next create index
+#index <- seq(1,length(rents$rent))
+
+#index <- sample(index)
+
+#rents$index <- index
+
+#rents <- arrange(rents, index) 
+
+#write_csv(rents, "rents_indexed.csv")
+```
+
+
+Next , for indices 1:1000, find the pessimistic and optimistic time to 
+Downtown SF, arriving by 9 am on the day of our midterm.
+
+``` {r}
+
+thursday <- as.numeric(ymd_hms("2016-10-06 09:00:00 PDT"))
+
+rents_to_1000 <- rents[1:1000,]
+
+opt <- gmapsdistance(origin = rents_to_1000$location, # 100 locations
+                   destination = "37.784765+-122.407737",  #Downtown SF
+                   mode = "driving",
+                   traffic_model = "optimistic", # Can also be pessimistic
+                   arrival = thursday) 
+
+ptm <- proc.time()
+pes <- gmapsdistance(origin = rents_to_1000$location, # 100 locations
+                   destination = "37.784765+-122.407737",  #Downtown SF
+                   mode = "driving",
+                   traffic_model = "pessimistic", # Can also be pessimistic
+                   arrival = thursday) 
+proc.time() - ptm
+
+
+optimistic <- as.data.frame(opt$Time)
+pessimistic <- as.data.frame(pes$Time)
+
+optimistic$opt_time <- optimistic$`Time.37.784765+-122.407737`
+optimistic$pes_time <- pessimistic$`Time.37.784765+-122.407737`
+
+time_to <- optimistic
+time_to <- time_to %>% 
+              select(-`Time.37.784765+-122.407737`)
+
+time_to  <- time_to %>% 
+            mutate(opt_minutes = opt_time /60) %>%
+            mutate(pes_minutes = pes_time / 60)
+
+rents_to_1000 <- left_join(time_to, rents_to_1000, by = c("or" = "location"))
+
+
+```
+
+
+```{r}
+
+rents_to_1000 <- read_csv('rents_to_1000.csv')
+
+rbind(rents_to_1000, rents_to_2000)

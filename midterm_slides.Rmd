@@ -1,0 +1,266 @@
+---
+title: "Renting and Commuting in the Bay Area"
+output: slidy_presentation
+runtime: shiny
+---
+
+```{r Set Up, eval=TRUE, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+setwd('/Users/nancystetson/Google Drive/Midterm/Midterm Presentation')
+
+library(tidyverse)
+library(lubridate)
+library(wesanderson)
+
+# Load libraries ------------
+library(RColorBrewer)
+library(tidyr)
+library(leaflet)
+library(rgeos)
+library(sp)
+library(shiny)
+
+# read in rent data
+rents1 <- read_csv("rents_to_1000.csv")
+rents2 <- read.csv("rents_to_2000.csv")
+rents3 <- read_csv('rents_to_3000.csv')
+rents4 <- read_csv('rents_to_4000.csv')
+
+# bind together
+rents <- rbind(rents1, rents2)
+rents <- rbind(rents, rents3)
+rents <- rbind(rents, rents4)
+write_csv(rents, 'rents_4000long.csv')
+
+# Some data input and cleaning -------------
+rents$price <- as.integer(rents$rent)
+rents$pes_minutes <- as.integer(rents$pes_minutes)
+rents <- rents %>% mutate( commute = as.integer((pes_minutes + opt_minutes)/2))
+
+
+# filter if rents are NA
+rents <- rents %>% filter(!(is.na(price)))
+
+#filter if optimisic time > 200
+rents <- rents %>% filter(commute <200)
+rents <- rents %>% filter(price < 10000)
+#rents <- rents %>% filter(sqft > 3)
+
+palette <- rev(brewer.pal(11, 'RdYlBu'))
+palette2 <- rev(brewer.pal(7, 'YlGnBu'))
+
+afford <- read_csv('afford.csv')
+```
+
+
+##
+```{r,  eval=TRUE, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.align='center'}
+
+cities3 <- afford %>% filter(RegionName=='New York, NY' | 
+                             RegionName == 'San Francisco, CA' |
+                             RegionName == 'Chicago, IL' |
+                             RegionName == 'Atlanta, GA')
+
+
+ggplot(cities3, aes(date, RentAffordability, color=RegionName)) +
+  geom_path(size=1) +
+  #geom_path(data= filter(cities3,RegionName=='San Francisco, CA'),
+             # aes(date, RentAffordability)) +
+  xlab("Year") + ylab("Income for Rent") +
+  ggtitle("Percent of Median Income Spent on Median Rent") +
+  scale_y_continuous(limits = c(0.15, 0.5), labels = scales::percent, breaks = seq(0,.5, .05)) +
+  scale_color_manual(values = c( 'lightblue2', 'lightblue3','lightblue4', 'firebrick'),
+                     guide = guide_legend(title = NULL)) +
+              theme_minimal() 
+
+```
+
+
+##
+```{r,  eval=TRUE, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.align='center'}
+
+# But what if you moved to the suburbs?
+cities_near <- afford %>% filter(
+                                RegionName=='Santa Rosa, CA' | 
+                               RegionName == 'Vallejo, CA' |
+                               #RegionName == 'Sacramento, CA'|
+                              RegionName == 'San Jose, CA' |
+                                #RegionName == 'Stockton, CA'
+                              RegionName == 'San Francisco, CA' 
+                              )
+
+
+
+ggplot(cities_near, aes(date, RentAffordability, color=RegionName)) +
+  geom_path() +
+  geom_path(data= filter(cities_near,RegionName=='San Francisco, CA'),
+    aes(date, RentAffordability), color='firebrick', size = 1) +
+  geom_path(data= filter(cities_near,RegionName=='Vallejo, CA'),
+            aes(date, RentAffordability), color='darkorange3', size = 1) +
+  
+  scale_color_manual(values = c( 'firebrick', 'goldenrod','goldenrod1', 'darkorange3'), 
+                     guide = guide_legend(title = NULL, 
+                              label.theme = element_text(size=10, angle=0))) + 
+            #^ trying to get legend text larger and failing 
+  
+  xlab("Year") + ylab("Income for Rent") +
+  ggtitle("Percent of Median Income Spent on Median Rent") +
+  scale_y_continuous(limits = c(0.15, 0.5), labels = scales::percent, breaks = seq(0,.5, .05)) +
+ 
+  theme_minimal() 
+
+```
+
+##
+``` {r, eval=TRUE, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.align='center'}
+
+rents <- rents %>% mutate(bed_factor = as.factor(bedrooms))
+
+scatter_plot <- rents %>% filter(price < 10000 ) %>%
+      ggplot(  aes(commute, price, color=bed_factor) )+ 
+  
+      geom_point(size = 1, aes(color= bed_factor))+
+                   
+        geom_smooth(size = .8, color = 'navy', alpha = 0.2) +
+      xlab("Minutes to Downtown SF") + 
+  ylab("Rent" ) + 
+      ggtitle("Rent Versus Commute") +
+    scale_color_brewer(palette = 'Spectral',
+                         guide = guide_legend(title = 'Bedrooms')) +
+  scale_x_continuous(breaks= seq(0,180, 15)) +
+        theme_minimal()
+
+scatter_plot
+# 
+# scatter_plot_sqft <-  
+#                                          
+#             ggplot(rents,  aes(commute, rent_sqft, color=bed_factor) )+ 
+#   
+#       geom_point(size = 0.8, aes(color= bed_factor))+
+#                    
+#         geom_smooth(size = 0.8, color = 'navy') +
+#       xlab("Minutes to Downtown SF") + 
+#   ylab("Rent Per SqFt" ) + 
+#       ggtitle("Rent Versus Commute") +
+#     scale_color_brewer(palette = 'Spectral',
+#                          guide = guide_legend(title = 'Bedrooms')) +
+#         theme_minimal()
+# 
+# scatter_plot_sqft
+
+``` 
+
+
+##
+```{r, , eval=TRUE, echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+br1_scatter <- rents %>% filter(bed_factor == '1') %>%
+      ggplot(  aes(commute, price) )+ 
+  
+      geom_point(size = 0.8, color = 'gray25', alpha = 0.8)+
+                   
+        geom_smooth(size = .5, color = 'indianred', alpha = 0.3) +
+      xlab("Minutes to Downtown SF") + 
+  ylab("Rent" ) + 
+      ggtitle("Rent Versus Commute for One Bedrooms") +
+    #scale_color_brewer(palette = 'Spectral',
+                        # guide = guide_legend(title = 'Bedrooms')) +
+  scale_x_continuous(breaks= seq(0,180, 15)) +
+        theme_minimal()
+
+br1_scatter
+```
+
+
+##
+```{r, echo=F}
+
+shinyApp(
+  
+ui = bootstrapPage(
+  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+  leafletOutput("map", width = "100%", height = "100%"),
+  absolutePanel(top = 10, right = 10,
+                sliderInput("price", "Monthly Rent", 250, max(10000),
+                            value = range(1000,5000), step = 50, ticks = F
+                ),
+                
+                sliderInput("commute", "Commute in Minutes to Downtown SF", 0, 180,
+                            value = range(10,80), step = 5, ticks = F
+                ),
+                #selectInput("neighborhood", "Neighborhoods",
+                #            neighborhood_names
+                #selectInput("county", "County",
+                            #county_names
+                
+                checkboxInput("legend", "Show legend", TRUE)
+  )
+
+),
+
+server = function(input, output, session) {
+  
+  # Reactive expression for the data subsetted to what the user selected
+  filteredData <- reactive({
+    
+    # select these
+      these <- (rents$price >= input$price[1] & rents$price <= input$price[2]) &
+              (rents$commute >= input$commute[1] & rents$commute <= input$commute[2])
+    
+    
+    # subset
+    rents[these,]
+  })
+  
+  # This reactive expression represents the palette function,
+  # which changes as the user makes selections in UI.
+  colorpal <- reactive({
+    colorNumeric(palette = palette, rents$price, domain = c(0,10000))
+  })
+  
+  output$map <- renderLeaflet({
+    # Use leaflet() here, and only include aspects of the map that
+    # won't need to change dynamically (at least, not unless the
+    # entire map is being torn down and recreated).
+    leaflet(rents) %>% addProviderTiles("Stamen.TonerLite") %>%
+      fitBounds(-122.428, 37.659645,-122.237708, 37.922)
+  })
+  
+  # Incremental changes to the map (in this case, replacing the
+  # circles when a new color is chosen) should be performed in
+  # an observer. Each independent set of things that can change
+  # should be managed in its own observer.
+  observe({
+    pal <- colorpal()
+    
+    leafletProxy("map", data = filteredData()) %>%
+      clearShapes() %>%
+      addCircles(radius = ~((price/5)*commute)/50, weight = 1, color = "#777777",
+                 fillColor = ~pal(price), fillOpacity = 0.9, 
+                 popup = ~paste('Price: $',price, '<br>', 
+                              ' Bedrooms: ', bedrooms, '<br>', 
+                              ' Av Commute: ', commute,'min',sep = "") 
+      )
+  })
+  
+  # Use a separate observer to recreate the legend as needed.
+  observe({
+    proxy <- leafletProxy("map", data = rents)
+    
+    # Remove any existing legend, and only if the legend is
+    # enabled, create a new one.
+    proxy %>% clearControls()
+    if (input$legend) {
+      pal <- colorpal()
+      proxy %>% addLegend(title = "Rent", position = "bottomright",
+                          pal = pal, values = c(0,10000)
+      )
+    }
+  })
+},
+
+options = list(height = 600)
+
+)
+
+```
+

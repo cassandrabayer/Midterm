@@ -1,0 +1,130 @@
+---
+title: "Rents and Commutes in the Bay Area"
+runtime: shiny
+output: html_document
+---
+
+```{r setup, echo = F,  eval=TRUE, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+
+#setwd('/Users/nancystetson/Google Drive/Midterm/Midterm Presentation')
+
+library(tidyverse)
+library(lubridate)
+library(wesanderson)
+
+# Load libraries ------------
+library(RColorBrewer)
+library(tidyr)
+library(leaflet)
+library(rgeos)
+library(sp)
+library(shiny)
+
+
+# Some data input and cleaning -------------
+rents <- read.csv("rents_4000long.csv")
+rents$price <- as.integer(rents$rent)
+rents$pes_minutes <- as.integer(rents$pes_minutes)
+rents <- rents %>% mutate( commute = as.integer((pes_minutes + opt_minutes)/2))
+
+
+# filter if rents are NA
+rents <- rents %>% filter(!(is.na(price)))
+
+#filter if optimisic time > 200
+rents <- rents %>% filter(commute <200)
+rents <- rents %>% filter(price < 100000)
+#rents <- rents %>% filter(sqft > 3)
+
+palette <- rev(brewer.pal(11, 'RdYlBu'))
+palette2 <- rev(brewer.pal(7, 'YlGnBu'))
+
+
+shinyApp(
+  
+ui = bootstrapPage(
+  tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+  leafletOutput("map", width = "100%", height = "100%"),
+  absolutePanel(top = 10, right = 10,
+                sliderInput("price", "Monthly Rent", 250, max(10000),
+                            value = range(1000,5000), step = 50, ticks = F
+                ),
+                
+                sliderInput("commute", "Commute in Minutes to Downtown SF", 0, 180,
+                            value = range(10,80), step = 5, ticks = F
+                ),
+                #selectInput("neighborhood", "Neighborhoods",
+                #            neighborhood_names
+                #selectInput("county", "County",
+                            #county_names
+                
+                checkboxInput("legend", "Show legend", TRUE)
+  )
+
+),
+
+server = function(input, output, session) {
+  
+  # Reactive expression for the data subsetted to what the user selected
+  filteredData <- reactive({
+    
+    # select these
+      these <- (rents$price >= input$price[1] & rents$price <= input$price[2]) &
+              (rents$commute >= input$commute[1] & rents$commute <= input$commute[2])
+    
+    
+    # subset
+    rents[these,]
+  })
+  
+  # This reactive expression represents the palette function,
+  # which changes as the user makes selections in UI.
+  colorpal <- reactive({
+    colorNumeric(palette = palette, rents$price, domain = c(0,10000))
+  })
+  
+  output$map <- renderLeaflet({
+    # Use leaflet() here, and only include aspects of the map that
+    # won't need to change dynamically (at least, not unless the
+    # entire map is being torn down and recreated).
+    leaflet(rents) %>% addProviderTiles("Stamen.TonerLite") %>%
+      fitBounds(-122.428, 37.659645,-122.237708, 37.922)
+  })
+  
+  # Incremental changes to the map (in this case, replacing the
+  # circles when a new color is chosen) should be performed in
+  # an observer. Each independent set of things that can change
+  # should be managed in its own observer.
+  observe({
+    pal <- colorpal()
+    
+    leafletProxy("map", data = filteredData()) %>%
+      clearShapes() %>%
+      addCircles(radius = ~((price/5)*commute)/50, weight = 1, color = "#777777",
+                 fillColor = ~pal(price), fillOpacity = 0.9, 
+                 popup = ~paste('Price: $',price, '<br>', 
+                              ' Bedrooms: ', bedrooms, '<br>', 
+                              ' Av Commute: ', commute,'min',sep = "") 
+      )
+  })
+  
+  # Use a separate observer to recreate the legend as needed.
+  observe({
+    proxy <- leafletProxy("map", data = rents)
+    
+    # Remove any existing legend, and only if the legend is
+    # enabled, create a new one.
+    proxy %>% clearControls()
+    if (input$legend) {
+      pal <- colorpal()
+      proxy %>% addLegend(title = "Rent", position = "bottomright",
+                          pal = pal, values = c(0,10000)
+      )
+    }
+  })
+},
+
+options = list(height = 600)
+
+)

@@ -1,0 +1,48 @@
+---
+title: "NewGraph"
+output: html_document
+---
+
+Original Plot
+```{r setup, include=FALSE}
+
+rents <- rents %>% mutate(bed_factor = as.factor(bedrooms))
+
+scatter_plot <- rents %>%
+      ggplot(  aes(commute, price, color=bed_factor) )+ 
+  
+      geom_point(size = 1, aes(color= bed_factor))+
+                   
+        geom_smooth(size = .8, color = 'navy', alpha = 0.2) +
+      xlab("Minutes to Downtown SF") + 
+  ylab("Rent" ) + 
+      ggtitle("Rent Versus Commute") +
+    scale_color_brewer(palette = 'Spectral',
+                         guide = guide_legend(title = 'Bedrooms')) +
+  scale_x_continuous(breaks= seq(0,180, 15)) +
+        theme_minimal()
+
+scatter_plot
+```
+
+New and Improved Plot
+```{r setup, include=FALSE}
+
+rents <- rents %>% filter(bedrooms < 6)
+
+scatter_plot <- rents %>% 
+      ggplot(  aes(commute, price, color=bed_factor) )+ 
+  
+      geom_point(size = 1, aes(color= bed_factor))+
+                   
+        geom_smooth(method = lm, size = .8, color = 'navy', alpha = 0.2) +
+      xlab("Minutes to Downtown SF") + 
+  ylab("Rent" ) + 
+      ggtitle("It is cheaper to live farther from Downtown San Francisco") +
+    scale_color_brewer(palette = 'Spectral',
+                         guide = guide_legend(title = 'Bedrooms')) +
+  scale_x_continuous(breaks= seq(0,180, 15)) +
+        theme_minimal()
+
+scatter_plot
+```
